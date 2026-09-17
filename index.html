@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Excellence Academy Admin</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #17202a;
+        }
+        
+        header {
+            background: #171746;
+            color: #fff;
+            padding: 18px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        main {
+            max-width: 1200px;
+            margin: 25px auto;
+            padding: 0 16px;
+        }
+        
+        .login,
+        .panel {
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 5px 20px #0001;
+            margin-bottom: 20px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        
+        .card {
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 10px;
+        }
+        
+        .number {
+            font-size: 32px;
+            font-weight: 700;
+        }
+        
+        .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        input,
+        select,
+        button {
+            padding: 11px;
+            border: 1px solid #ccd3dc;
+            border-radius: 7px;
+        }
+        
+        input {
+            width: 100%;
+        }
+        
+        button {
+            cursor: pointer;
+            background: #1d2596;
+            color: #fff;
+            border: 0;
+        }
+        
+        .danger {
+            background: #9b2226;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+        
+        th,
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+            vertical-align: top;
+        }
+        
+        td {
+            font-size: 14px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .muted {
+            color: #667085;
+        }
+        
+        .status {
+            min-width: 120px;
+        }
+        
+        @media (max-width: 700px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            table {
+                display: block;
+                overflow: auto;
+                white-space: nowrap;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <strong>Excellence Academy — Admin</strong
+      ><button id="logout" class="danger hidden">Logout</button>
+    </header>
+    <main>
+      <section id="loginBox" class="login">
+        <h2>Administrator Login</h2>
+        <p class="muted">Use the admin account created during setup.</p>
+        <form id="loginForm">
+          <p>
+            <input
+              name="email"
+              type="email"
+              placeholder="Admin email"
+              required
+            />
+          </p>
+          <p>
+            <input
+              name="password"
+              type="password"
+              placeholder="Password"
+              required
+            />
+          </p>
+          <button>Login</button>
+        </form>
+      </section>
+      <section id="dashboard" class="hidden">
+        <div class="grid">
+          <div class="card">
+            <div class="muted">Active Students</div>
+            <div id="studentsCount" class="number">0</div>
+          </div>
+          <div class="card">
+            <div class="muted">New Inquiries</div>
+            <div id="inquiriesCount" class="number">0</div>
+          </div>
+          <div class="card">
+            <div class="muted">New Messages</div>
+            <div id="messagesCount" class="number">0</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Admission Inquiries</h2>
+          <div id="inquiriesTable">Loading...</div>
+        </div>
+        <div class="panel">
+          <h2>Contact Messages</h2>
+          <div id="messagesTable">Loading...</div>
+        </div>
+      </section>
+    </main>
+    <script>
+      const API = "/api";
+      let token = localStorage.getItem("academy_admin_token");
+      const $ = (id) => document.getElementById(id);
+      async function api(path, options = {}) {
+        options.headers = {
+          ...(options.headers || {}),
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        };
+        const r = await fetch(API + path, options);
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.message || "Request failed");
+        return d;
+      }
+      function esc(v) {
+        return String(v ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#039;",
+            })[c],
+        );
+      }
+      async function load() {
+        try {
+          const d = await api("/admin/dashboard");
+          $("studentsCount").textContent = d.data.students.total || 0;
+          $("inquiriesCount").textContent = d.data.inquiries.new_count || 0;
+          $("messagesCount").textContent = d.data.messages.new_count || 0;
+          const iq = await api("/admin/inquiries");
+          $("inquiriesTable").innerHTML = tableInquiries(iq.data);
+          const ms = await api("/admin/messages");
+          $("messagesTable").innerHTML = tableMessages(ms.data);
+          document.querySelectorAll(".status").forEach((s) =>
+            s.addEventListener("change", async (e) => {
+              const type = e.target.dataset.type,
+                id = e.target.dataset.id;
+              await api(`/admin/${type}/${id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: e.target.value }),
+              });
+              load();
+            }),
+          );
+        } catch (e) {
+          alert(e.message);
+          logout();
+        }
+      }
+      function select(id, type, value, opts) {
+        return `<select class="status" data-type="${type}" data-id="${id}">${opts.map((x) => `<option ${x === value ? "selected" : ""}>${x}</option>`).join("")}</select>`;
+      }
+      function tableInquiries(rows) {
+        if (!rows.length) return "<p>No inquiries yet.</p>";
+        return `<table><tr><th>Date</th><th>Name</th><th>Contact</th><th>Grade</th><th>Message</th><th>Status</th></tr>${rows.map((r) => `<tr><td>${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.name)}</td><td>${esc(r.email)}<br>${esc(r.phone)}</td><td>${esc(r.grade)}</td><td>${esc(r.message)}</td><td>${select(r.id, "inquiries", r.status, ["new", "contacted", "closed"])}</td></tr>`).join("")}</table>`;
+      }
+      function tableMessages(rows) {
+        if (!rows.length) return "<p>No messages yet.</p>";
+        return `<table><tr><th>Date</th><th>Name</th><th>Email</th><th>Subject</th><th>Message</th><th>Status</th></tr>${rows.map((r) => `<tr><td>${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${esc(r.subject)}</td><td>${esc(r.message)}</td><td>${select(r.id, "messages", r.status, ["new", "read", "replied", "closed"])}</td></tr>`).join("")}</table>`;
+      }
+      function logout() {
+        localStorage.removeItem("academy_admin_token");
+        token = null;
+        $("loginBox").classList.remove("hidden");
+        $("dashboard").classList.add("hidden");
+        $("logout").classList.add("hidden");
+      }
+      $("loginForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(e.target));
+        try {
+          const d = await fetch(API + "/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+          const j = await d.json();
+          if (!d.ok) throw new Error(j.message);
+          token = j.token;
+          localStorage.setItem("academy_admin_token", token);
+          show();
+        } catch (x) {
+          alert(x.message);
+        }
+      });
+      $("logout").onclick = logout;
+      async function show() {
+        if (!token) return;
+        try {
+          await api("/auth/me");
+          $("loginBox").classList.add("hidden");
+          $("dashboard").classList.remove("hidden");
+          $("logout").classList.remove("hidden");
+          load();
+        } catch {
+          logout();
+        }
+      }
+      show();
+    </script>
+  </body>
+</html>
